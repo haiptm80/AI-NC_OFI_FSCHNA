@@ -1,0 +1,97 @@
+1:import express from "express";
+2:import path from "path";
+3:import { createServer as createViteServer } from "vite";
+4:import { GoogleGenAI } from "@google/genai";
+5:
+6:async function startServer() {
+7:  const app = express();
+8:  const PORT = 3000;
+9:
+10:  // Increase payload limit for large Excel files
+11:  app.use(express.json({ limit: "50mb" }));
+12:
+13:  app.get("/api/health", (req, res) => {
+14:    res.json({ status: "ok" });
+15:  });
+16:
+17:  app.post("/api/analyze", async (req, res) => {
+18:    try {
+19:      const { summary } = req.body;
+20:      if (!summary) {
+21:        return res.status(400).json({ error: "Missing summary payload" });
+22:      }
+23:
+24:      if (!process.env.GEMINI_API_KEY) {
+25:        return res.status(500).json({ error: "GEMINI_API_KEY is not configured on the server." });
+26:      }
+27:
+28:      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+29:      
+30:      const prompt = `Bạn là một Chuyên gia Đào tạo QA/FQA của FPT Education.
+31:Yêu cầu trọng tâm của User: "${summary.userRequirement}"
+32:
+33:Hãy tuân thủ KHUNG TƯ DUY KWSR sau đây khi phân tích:
+34:• K - Knowledge (Bối cảnh & Kiến thức): Dữ liệu NC/OFI của FSCHNA qua các giai đoạn. Các phòng ban trọng yếu: Đào tạo, CTHS, Tuyển sinh, Văn phòng. Phương pháp phân tích áp dụng: Nguyên lý Pareto (80/20), Phân tích nguyên nhân gốc rễ (RCA), 5-Whys.
+35:• W - Workflow (Luồng công việc): Tổng hợp số liệu → Phân tích xu hướng → Cắt lớp dữ liệu (phòng ban & nhóm lỗi) → Tìm nguyên nhân gốc rễ → Đề xuất hành động khắc phục (CAPA) và phòng ngừa.
+36:• S - Strategy (Chiến lược báo cáo): Đi từ Tổng quan đến Chi tiết. Tập trung vào "Nhóm thiểu số trọng yếu" (Vital Few) gây ra 80% rủi ro (Pareto). Biến dữ liệu thành "câu chuyện chất lượng" dễ hiểu để Ban Giám Hiệu ra quyết định. Tập trung TRỌNG TÂM vào yêu cầu của user.
+37:• R - Rules (Nguyên tắc & Tiêu chuẩn): Khách quan, không đổ lỗi cá nhân (blame-free). Văn phong điều hành, súc tích bằng tiếng Việt.
+38:
+39:Đây là bản tóm tắt số liệu từ hệ thống (đã làm sạch):
+40:${JSON.stringify(summary, null, 2)}
+41:
+42:Hãy viết một báo cáo phân tích theo yêu cầu trọng tâm của User (Khoảng 200 - 400 từ) dạng Markdown.
+43:Nếu User chỉ định phân tích rủi ro, hãy bỏ qua các phần khác để tập trung vào Rủi ro.
+44:Nếu User chỉ định phân tích xu hướng, hãy phân tích xu hướng theo thời gian.
+45:Cấu trúc linh hoạt dựa án theo yêu cầu trọng tâm, định dạng trực quan. LƯU Ý: Không bịa số liệu. Dựa sát vào 'summary' được cung cấp. Nếu dữ liệu quá ít, hãy nêu rõ giới hạn.
+46:`;
+47:
+48:      const responseStream = await ai.models.generateContentStream({
+49:        model: "gemini-2.5-flash",
+50:        contents: prompt,
+51:      });
+52:
+53:      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+54:      res.setHeader("Transfer-Encoding", "chunked");
+55:
+56:      for await (const chunk of responseStream) {
+57:        if (chunk.text) {
+58:          res.write(chunk.text);
+59:        }
+60:      }
+61:      res.end();
+62:    } catch (error: any) {
+63:      console.error("Analysis error:", error);
+64:      let errorMessage = error.message || "Failed to analyze data";
+65:      if (error.status === 503 || errorMessage.includes('503') || errorMessage.includes('UNAVAILABLE')) {
+66:        errorMessage = "Máy chủ AI hiện đang bị quá tải (API 503). Vui lòng thử lại sau ít phút.";
+67:      }
+68:      if (res.headersSent) {
+69:        res.write("\n\n[Lỗi: " + errorMessage + "]");
+70:        res.end();
+71:      } else {
+72:        res.status(500).json({ error: errorMessage });
+73:      }
+74:    }
+75:  });
+76:
+77:  // Vite middleware for development
+78:  if (process.env.NODE_ENV !== "production") {
+79:    const vite = await createViteServer({
+80:      server: { middlewareMode: true },
+81:      appType: "spa",
+82:    });
+83:    app.use(vite.middlewares);
+84:  } else {
+85:    const distPath = path.join(process.cwd(), "dist");
+86:    app.use(express.static(distPath));
+87:    app.get("*", (req, res) => {
+88:      res.sendFile(path.join(distPath, "index.html"));
+89:    });
+90:  }
+91:
+92:  app.listen(PORT, "0.0.0.0", () => {
+93:    console.log(`Server running on http://localhost:${PORT}`);
+94:  });
+95:}
+96:
+97:startServer();

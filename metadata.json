@@ -1,0 +1,8 @@
+{
+  "name": "FSC_HaNam_NC_OFI_Analyzer",
+  "description": "Ứng dụng phân tích và tổng hợp dữ liệu NC/OFI cho cơ sở FSC Hà Nam",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
